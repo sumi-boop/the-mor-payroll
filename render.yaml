@@ -1,0 +1,39 @@
+# Render(https://render.com)へのデプロイ設定ファイル(Blueprint)。
+# Renderのダッシュボードで「New +」→「Blueprint」から、このファイルを含むGitリポジトリを
+# 選択すると、このファイルの内容にもとづいてWebサービスが自動的に作成されます。
+#
+# 事前に用意が必要なもの:
+#   - このプロジェクトをpushしたGitHub(またはGitLab)リポジトリ
+#   - Renderアカウント(Starterプラン以上、$7/月〜)
+#
+# デプロイ後、Renderダッシュボードの「Environment」タブで
+# ADMIN_LOGIN_ID / ADMIN_PASSWORD を入力してください(このファイルには含めていません)。
+
+services:
+  - type: web
+    runtime: node
+    name: the-mor-payroll
+    plan: starter
+    region: singapore
+    buildCommand: npm install --ignore-scripts && npx prisma generate && npm run build
+    # preDeployCommand は buildCommand の後、startCommand の前に毎回実行される。
+    # db push と seed はどちらも冪等(何度実行しても安全)なため、デプロイのたびに実行してよい。
+    preDeployCommand: npx prisma db push --accept-data-loss --skip-generate && npm run db:seed
+    startCommand: npm run start
+    disk:
+      name: the-mor-payroll-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATABASE_URL
+        value: file:/data/prod.db
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_LOGIN_ID
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: 管理者
