@@ -1,0 +1,207 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ users (管理者) ============
+model User {
+  id           String   @id @default(cuid())
+  loginId      String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("admin")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs        AuditLog[]
+  imports          PayrollImport[]
+  confirmedRecords PayrollRecord[]  @relation("ConfirmedBy")
+  snapshots        PayrollSnapshot[]
+
+  @@map("users")
+}
+
+// ============ employees (従業員マスタ) ============
+model Employee {
+  id                 String    @id @default(cuid())
+  name               String
+  nameNormalized     String // 照合用に正規化した氏名
+  kana               String?
+  employeeNumber     String?   @unique
+  postalCode         String?
+  address            String?
+  birthDate          DateTime?
+  hireDate           DateTime?
+  resignDate         DateTime?
+  status             String    @default("active") // active | resigned | leave
+  payType             String    @default("hourly") // hourly | monthly など給与区分
+  socialInsurance    Boolean   @default(false) // 社会保険加入状況
+  careInsurance      Boolean   @default(false) // 介護保険対象
+  employmentInsurance Boolean  @default(false) // 雇用保険加入状況
+  standardMonthlyRemuneration Int? // 標準報酬月額
+  dependentFormSubmitted Boolean @default(false) // 扶養控除等申告書提出有無
+  dependentCount     Int       @default(0) // 扶養親族等の人数
+  taxWithholdingType String    @default("kou") // kou(甲欄) | otsu(乙欄)
+  bankInfo           String? // 振込先情報（銀行名・支店名・口座種別・口座番号・口座名義）
+  remarks            String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  monthlyDeductions MonthlyDeduction[]
+  payrollRecords    PayrollRecord[]
+
+  @@index([nameNormalized])
+  @@map("employees")
+}
+
+// ============ employee_monthly_deductions (月別控除設定) ============
+model MonthlyDeduction {
+  id             String   @id @default(cuid())
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  targetMonth    String // "2026-08" 形式
+  healthInsurance Int     @default(0) // 健康保険料
+  careInsurance   Int     @default(0) // 介護保険料
+  pensionInsurance Int    @default(0) // 厚生年金保険料
+  employmentInsurance Int @default(0) // 雇用保険料
+  incomeTax      Int      @default(0) // 所得税
+  residentTax    Int      @default(0) // 住民税
+  otherDeduction Int      @default(0) // その他控除
+  otherDeductionLabel String? // その他控除の名称
+  remarks        String?
+
+  // 確認状況（住民税・社会保険・所得税などは管理者確認が必要）
+  residentTaxConfirmed  Boolean @default(false)
+  socialInsuranceConfirmed Boolean @default(false)
+  incomeTaxConfirmed    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, targetMonth])
+  @@index([targetMonth])
+  @@map("employee_monthly_deductions")
+}
+
+// ============ payroll_imports (CSV取込履歴) ============
+model PayrollImport {
+  id           String   @id @default(cuid())
+  targetMonth  String // "2026-08"
+  payDate      DateTime // 支給日
+  fileName     String
+  fileSize     Int
+  encoding     String // detected encoding: utf-8 | utf-8-bom | shift_jis
+  rowCount     Int
+  importedById String
+  importedBy   User     @relation(fields: [importedById], references: [id])
+  rawCsvJson   String // パース結果のスナップショット(JSON文字列)
+  status       String   @default("completed") // completed | failed
+  createdAt    DateTime @default(now())
+
+  records PayrollRecord[]
+
+  @@index([targetMonth])
+  @@map("payroll_imports")
+}
+
+// ============ payroll_records (給与明細レコード) ============
+model PayrollRecord {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  importId    String?
+  import      PayrollImport? @relation(fields: [importId], references: [id])
+  targetMonth String // "2026-08"
+  payDate     DateTime
+
+  // 勤怠(CSVより)
+  workDays        Int
+  workMinutes     Int // 労働時間を分換算で保存
+  overtimeMinutes Int // 残業時間
+  nightMinutes    Int // 深夜労働時間
+  hourlyWage      Int
+
+  // 支給(CSV記載額をそのまま正式採用)
+  baseSalary        Int // 基本給
+  overtimeAllowance Int // 残業手当
+  nightAllowance    Int // 深夜手当
+  commuteAllowance  Int // 通勤手当
+  otherAllowance    Int // 手当・その他
+  totalAllowanceCsv Int // CSVの「合計」列(検証用)
+  totalPayment      Int // 実際に採用する総支給額(=内訳の合計)
+
+  amountMismatch   Boolean @default(false) // 支給額不一致フラグ
+  amountMismatchAck Boolean @default(false) // 管理者確認済みフラグ
+  amountMismatchDiff Int    @default(0)
+
+  // 控除(月別控除設定からコピー)
+  healthInsurance     Int @default(0)
+  careInsurance       Int @default(0)
+  pensionInsurance    Int @default(0)
+  employmentInsurance Int @default(0)
+  incomeTax           Int @default(0)
+  residentTax         Int @default(0)
+  otherDeduction      Int @default(0)
+  otherDeductionLabel String?
+  totalDeduction      Int @default(0)
+  netPayment          Int @default(0) // 差引支給額
+
+  remarks String?
+
+  // 確定管理
+  isConfirmed   Boolean   @default(false)
+  confirmedAt   DateTime?
+  confirmedById String?
+  confirmedBy   User?     @relation("ConfirmedBy", fields: [confirmedById], references: [id])
+  pdfGeneratedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  snapshots PayrollSnapshot[]
+
+  @@unique([employeeId, targetMonth])
+  @@index([targetMonth])
+  @@map("payroll_records")
+}
+
+// ============ payroll_snapshots (確定時点のスナップショット) ============
+model PayrollSnapshot {
+  id              String   @id @default(cuid())
+  payrollRecordId String
+  payrollRecord   PayrollRecord @relation(fields: [payrollRecordId], references: [id])
+  targetMonth     String
+  employeeId      String
+  snapshotJson    String // 確定時点の全データをJSONで保持
+  reason          String   @default("confirm") // confirm | reconfirm | pdf
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([payrollRecordId])
+  @@index([targetMonth])
+  @@map("payroll_snapshots")
+}
+
+// ============ audit_logs (監査ログ) ============
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String // login | csv_import | deduction_update | payroll_confirm | payroll_unconfirm | pdf_generate | zip_generate | employee_update ...
+  targetType String? // Employee | PayrollRecord | MonthlyDeduction | PayrollImport
+  targetId  String?
+  detail    String? // 個人情報(住所・金額等)を含まない要約のみ
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

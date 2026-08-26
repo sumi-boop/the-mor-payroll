@@ -1,0 +1,356 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import { formatYen } from "@/lib/format";
+import { calcTotalDeduction } from "@/lib/payroll/calc";
+
+type Employee = {
+  id: string;
+  name: string;
+  socialInsurance: boolean;
+  employmentInsurance: boolean;
+};
+
+type Deduction = {
+  id: string;
+  employeeId: string;
+  targetMonth: string;
+  healthInsurance: number;
+  careInsurance: number;
+  pensionInsurance: number;
+  employmentInsurance: number;
+  incomeTax: number;
+  residentTax: number;
+  otherDeduction: number;
+  otherDeductionLabel: string | null;
+  remarks: string | null;
+  residentTaxConfirmed: boolean;
+  socialInsuranceConfirmed: boolean;
+  incomeTaxConfirmed: boolean;
+};
+
+type Row = Omit<Deduction, "id"> & { id?: string };
+
+const FIELD_KEYS = [
+  "healthInsurance",
+  "careInsurance",
+  "pensionInsurance",
+  "employmentInsurance",
+  "incomeTax",
+  "residentTax",
+  "otherDeduction",
+] as const;
+
+const FIELD_LABELS: Record<(typeof FIELD_KEYS)[number], string> = {
+  healthInsurance: "健康保険料",
+  careInsurance: "介護保険料",
+  pensionInsurance: "厚生年金保険料",
+  employmentInsurance: "雇用保険料",
+  incomeTax: "所得税",
+  residentTax: "住民税",
+  otherDeduction: "その他控除",
+};
+
+export function DeductionManager({
+  targetMonth,
+  employees,
+  deductions,
+}: {
+  targetMonth: string;
+  employees: Employee[];
+  deductions: Deduction[];
+}) {
+  const router = useRouter();
+  const [rows, setRows] = useState<Record<string, Row>>(() => {
+    const map: Record<string, Row> = {};
+    for (const emp of employees) {
+      const existing = deductions.find((d) => d.employeeId === emp.id);
+      map[emp.id] = existing ?? {
+        employeeId: emp.id,
+        targetMonth,
+        healthInsurance: 0,
+        careInsurance: 0,
+        pensionInsurance: 0,
+        employmentInsurance: 0,
+        incomeTax: 0,
+        residentTax: 0,
+        otherDeduction: 0,
+        otherDeductionLabel: "",
+        remarks: "",
+        residentTaxConfirmed: false,
+        socialInsuranceConfirmed: false,
+        incomeTaxConfirmed: false,
+      };
+    }
+    return map;
+  });
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [bulkEmployee, setBulkEmployee] = useState<Employee | null>(null);
+
+  function updateRow(employeeId: string, patch: Partial<Row>) {
+    setRows((prev) => ({ ...prev, [employeeId]: { ...prev[employeeId], ...patch } }));
+  }
+
+  async function handleSave(employeeId: string) {
+    setSavingId(employeeId);
+    const row = rows[employeeId];
+    try {
+      const res = await fetch("/api/deductions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(row),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        updateRow(employeeId, data.deduction);
+      }
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleCopyPrevious() {
+    setCopying(true);
+    try {
+      const res = await fetch("/api/deductions/copy-previous", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetMonth }),
+      });
+      if (res.ok) {
+        router.refresh();
+        window.location.reload();
+      }
+    } finally {
+      setCopying(false);
+    }
+  }
+
+  function handleMonthChange(month: string) {
+    router.push(`/deductions?month=${month}`);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium">対象年月</label>
+          <Input
+            type="month"
+            value={targetMonth}
+            onChange={(e) => handleMonthChange(e.target.value)}
+            className="w-48"
+          />
+        </div>
+        <Button variant="outline" onClick={handleCopyPrevious} disabled={copying}>
+          {copying ? "コピー中..." : "前月の控除額をコピー"}
+        </Button>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="sticky left-0 bg-secondary">氏名</TableHead>
+              {FIELD_KEYS.map((key) => (
+                <TableHead key={key}>{FIELD_LABELS[key]}</TableHead>
+              ))}
+              <TableHead>控除合計</TableHead>
+              <TableHead>確認</TableHead>
+              <TableHead>住民税一括</TableHead>
+              <TableHead>保存</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {employees.map((emp) => {
+              const row = rows[emp.id];
+              const total = calcTotalDeduction(row);
+              return (
+                <TableRow key={emp.id}>
+                  <TableCell className="sticky left-0 bg-card font-medium">
+                    {emp.name}
+                    {emp.socialInsurance && (
+                      <Badge variant="outline" className="ml-1">社保</Badge>
+                    )}
+                    {emp.employmentInsurance && (
+                      <Badge variant="outline" className="ml-1">雇保</Badge>
+                    )}
+                  </TableCell>
+                  {FIELD_KEYS.map((key) => (
+                    <TableCell key={key}>
+                      <Input
+                        type="number"
+                        value={row[key]}
+                        onChange={(e) =>
+                          updateRow(emp.id, { [key]: Number(e.target.value) || 0 } as Partial<Row>)
+                        }
+                        className="w-28"
+                      />
+                    </TableCell>
+                  ))}
+                  <TableCell className="bg-result-field font-semibold tabular-nums">
+                    {formatYen(total)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1 text-xs">
+                      <label className="flex items-center gap-1">
+                        <Checkbox
+                          checked={row.residentTaxConfirmed}
+                          onCheckedChange={(v) => updateRow(emp.id, { residentTaxConfirmed: !!v })}
+                        />
+                        住民税
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <Checkbox
+                          checked={row.socialInsuranceConfirmed}
+                          onCheckedChange={(v) => updateRow(emp.id, { socialInsuranceConfirmed: !!v })}
+                        />
+                        社保
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <Checkbox
+                          checked={row.incomeTaxConfirmed}
+                          onCheckedChange={(v) => updateRow(emp.id, { incomeTaxConfirmed: !!v })}
+                        />
+                        所得税
+                      </label>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Button variant="outline" size="sm" onClick={() => setBulkEmployee(emp)}>
+                      一括登録
+                    </Button>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      onClick={() => handleSave(emp.id)}
+                      disabled={savingId === emp.id}
+                    >
+                      {savingId === emp.id ? "保存中" : "保存"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {bulkEmployee && (
+        <ResidentTaxBulkDialog
+          employee={bulkEmployee}
+          onClose={() => setBulkEmployee(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ResidentTaxBulkDialog({
+  employee,
+  onClose,
+}: {
+  employee: Employee;
+  onClose: () => void;
+}) {
+  const now = new Date();
+  const defaultStartYear = now.getMonth() + 1 >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const [startYear, setStartYear] = useState(defaultStartYear);
+  const [amounts, setAmounts] = useState<number[]>(() => Array(12).fill(0));
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const months = useMemo(() => {
+    const list: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const idx = 5 + i;
+      const y = startYear + Math.floor(idx / 12);
+      const m = (idx % 12) + 1;
+      list.push(`${y}年${m}月`);
+    }
+    return list;
+  }, [startYear]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/deductions/resident-tax-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: employee.id, startYear, amounts }),
+      });
+      if (res.ok) setDone(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{employee.name} さんの住民税 一括登録(6月〜翌年5月)</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          市区町村から届く「特別徴収税額決定通知書」に記載の月割額を入力してください。
+        </p>
+        <div className="flex items-center gap-2">
+          <label className="text-sm">開始年(6月分):</label>
+          <Input
+            type="number"
+            value={startYear}
+            onChange={(e) => setStartYear(Number(e.target.value))}
+            className="w-28"
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-3 max-h-80 overflow-y-auto">
+          {months.map((label, i) => (
+            <div key={label} className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">{label}</label>
+              <Input
+                type="number"
+                value={amounts[i]}
+                onChange={(e) => {
+                  const next = [...amounts];
+                  next[i] = Number(e.target.value) || 0;
+                  setAmounts(next);
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        {done && <p className="text-sm text-result-field-border">登録しました。</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            閉じる
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "登録中..." : "一括登録する"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
