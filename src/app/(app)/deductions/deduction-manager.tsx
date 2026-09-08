@@ -114,9 +114,54 @@ export function DeductionManager({
   const [estimateStatus, setEstimateStatus] = useState<
     Record<string, { message: string; tone: "ok" | "info" | "error" }>
   >({});
+  const [confirmStatus, setConfirmStatus] = useState<
+    Record<string, { message: string; tone: "ok" | "error" }>
+  >({});
 
   function updateRow(employeeId: string, patch: Partial<Row>) {
     setRows((prev) => ({ ...prev, [employeeId]: { ...prev[employeeId], ...patch } }));
+  }
+
+  // 確認チェックボックス(住民税・社保・所得税)は、他の入力項目と違い
+  // トグルした瞬間にその行の内容をまるごと保存する。
+  // これにより「チェックは入れたが保存ボタンを押し忘れた」ため
+  // 給与計算確認画面で「未確認」警告が消えない、という事故を防ぐ。
+  async function handleToggleConfirm(
+    employeeId: string,
+    field: "residentTaxConfirmed" | "socialInsuranceConfirmed" | "incomeTaxConfirmed",
+    value: boolean
+  ) {
+    const previousRow = rows[employeeId];
+    const nextRow = { ...previousRow, [field]: value };
+    setRows((prev) => ({ ...prev, [employeeId]: nextRow }));
+    setConfirmStatus((prev) => ({ ...prev, [employeeId]: undefined } as never));
+    setSavingId(employeeId);
+    try {
+      const res = await fetch("/api/deductions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextRow),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        updateRow(employeeId, data.deduction);
+        setConfirmStatus((prev) => ({ ...prev, [employeeId]: { message: "保存しました", tone: "ok" } }));
+      } else {
+        setRows((prev) => ({ ...prev, [employeeId]: previousRow }));
+        setConfirmStatus((prev) => ({
+          ...prev,
+          [employeeId]: { message: data.error ?? "保存に失敗しました。もう一度お試しください。", tone: "error" },
+        }));
+      }
+    } catch {
+      setRows((prev) => ({ ...prev, [employeeId]: previousRow }));
+      setConfirmStatus((prev) => ({
+        ...prev,
+        [employeeId]: { message: "通信エラーのため保存できませんでした。もう一度お試しください。", tone: "error" },
+      }));
+    } finally {
+      setSavingId(null);
+    }
   }
 
   async function handleSave(employeeId: string) {
@@ -301,24 +346,42 @@ export function DeductionManager({
                       <label className="flex items-center gap-1">
                         <Checkbox
                           checked={row.residentTaxConfirmed}
-                          onCheckedChange={(v) => updateRow(emp.id, { residentTaxConfirmed: !!v })}
+                          disabled={savingId === emp.id}
+                          onCheckedChange={(v) => handleToggleConfirm(emp.id, "residentTaxConfirmed", !!v)}
                         />
                         住民税
                       </label>
                       <label className="flex items-center gap-1">
                         <Checkbox
                           checked={row.socialInsuranceConfirmed}
-                          onCheckedChange={(v) => updateRow(emp.id, { socialInsuranceConfirmed: !!v })}
+                          disabled={savingId === emp.id}
+                          onCheckedChange={(v) => handleToggleConfirm(emp.id, "socialInsuranceConfirmed", !!v)}
                         />
                         社保
                       </label>
                       <label className="flex items-center gap-1">
                         <Checkbox
                           checked={row.incomeTaxConfirmed}
-                          onCheckedChange={(v) => updateRow(emp.id, { incomeTaxConfirmed: !!v })}
+                          disabled={savingId === emp.id}
+                          onCheckedChange={(v) => handleToggleConfirm(emp.id, "incomeTaxConfirmed", !!v)}
                         />
                         所得税
                       </label>
+                      {savingId === emp.id && (
+                        <p className="text-[11px] leading-snug text-muted-foreground">保存中...</p>
+                      )}
+                      {savingId !== emp.id && confirmStatus[emp.id] && (
+                        <p
+                          className={
+                            "text-[11px] leading-snug " +
+                            (confirmStatus[emp.id].tone === "ok"
+                              ? "text-result-field-border"
+                              : "text-destructive")
+                          }
+                        >
+                          {confirmStatus[emp.id].message}
+                        </p>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
