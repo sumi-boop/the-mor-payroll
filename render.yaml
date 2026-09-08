@@ -2,9 +2,13 @@
 # Renderのダッシュボードで「New +」→「Blueprint」から、このファイルを含むGitリポジトリを
 # 選択すると、このファイルの内容にもとづいてWebサービスが自動的に作成されます。
 #
+# ★ Starterプラン(月$7〜)+ 永続ディスク(月$0.25/GB〜)で構成しています。
+#   合計で月$7.25程度です。永続ディスク(/data)にSQLiteのデータベースファイルを
+#   保存するため、再デプロイやスリープ復帰があってもデータは消えません。
+#
 # 事前に用意が必要なもの:
 #   - このプロジェクトをpushしたGitHub(またはGitLab)リポジトリ
-#   - Renderアカウント(Starterプラン以上、$7/月〜)
+#   - Renderアカウント(Starterプランはクレジットカードの登録が必要です)
 #
 # デプロイ後、Renderダッシュボードの「Environment」タブで
 # ADMIN_LOGIN_ID / ADMIN_PASSWORD を入力してください(このファイルには含めていません)。
@@ -16,10 +20,12 @@ services:
     plan: starter
     region: singapore
     buildCommand: npm install --ignore-scripts && npx prisma generate && npm run build
-    # preDeployCommand は buildCommand の後、startCommand の前に毎回実行される。
-    # db push と seed はどちらも冪等(何度実行しても安全)なため、デプロイのたびに実行してよい。
-    preDeployCommand: npx prisma db push --accept-data-loss --skip-generate && npm run db:seed
-    startCommand: npm run start
+    # 注意: preDeployCommand は実際にサービスが起動するインスタンスとは別の
+    # 一時的な環境で実行され、永続ディスク(/data)にアクセスできない(Render公式仕様)。
+    # そのためdb pushとseedはpreDeployCommandではなくstartCommand側で、
+    # 実際にディスクがマウントされた状態のインスタンス上で実行する。
+    # db push と seed はどちらも冪等(何度実行しても安全)なため、起動のたびに実行してよい。
+    startCommand: npx prisma db push --accept-data-loss --skip-generate && npm run db:seed && npm run start
     disk:
       name: the-mor-payroll-data
       mountPath: /data
