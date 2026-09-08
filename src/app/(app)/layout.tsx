@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/import", label: "CSV取込" },
   { href: "/payroll", label: "給与計算確認" },
+  { href: "/payroll/transfer-list", label: "振込先一覧" },
   { href: "/deductions", label: "月別控除設定" },
   { href: "/employees", label: "従業員マスタ" },
   { href: "/history", label: "履歴" },
@@ -20,7 +21,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="bg-navy text-navy-foreground">
+      <header className="bg-navy text-navy-foreground print:hidden">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-6">
             <Link href="/dashboard" className="text-lg font-bold tracking-wide">
@@ -50,7 +51,7 @@ export default async function AppLayout({
         </nav>
       </header>
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
-      <footer className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground print:hidden">
         THE MOR 給与明細自動作成システム
       </footer>
     </div>
