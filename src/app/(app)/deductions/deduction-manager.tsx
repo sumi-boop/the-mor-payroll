@@ -29,6 +29,9 @@ type Employee = {
   name: string;
   socialInsurance: boolean;
   employmentInsurance: boolean;
+  taxWithholdingType: string;
+  dependentFormSubmitted: boolean;
+  dependentCount: number;
 };
 
 type Deduction = {
@@ -107,6 +110,10 @@ export function DeductionManager({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const [bulkEmployee, setBulkEmployee] = useState<Employee | null>(null);
+  const [estimating, setEstimating] = useState<string | null>(null);
+  const [estimateStatus, setEstimateStatus] = useState<
+    Record<string, { message: string; tone: "ok" | "info" | "error" }>
+  >({});
 
   function updateRow(employeeId: string, patch: Partial<Row>) {
     setRows((prev) => ({ ...prev, [employeeId]: { ...prev[employeeId], ...patch } }));
@@ -149,6 +156,55 @@ export function DeductionManager({
 
   function handleMonthChange(month: string) {
     router.push(`/deductions?month=${month}`);
+  }
+
+  async function handleEstimateIncomeTax(employeeId: string) {
+    setEstimating(employeeId);
+    setEstimateStatus((prev) => ({ ...prev, [employeeId]: undefined } as never));
+    const row = rows[employeeId];
+    try {
+      const res = await fetch("/api/deductions/income-tax-estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId,
+          targetMonth,
+          healthInsurance: row.healthInsurance,
+          careInsurance: row.careInsurance,
+          pensionInsurance: row.pensionInsurance,
+          employmentInsurance: row.employmentInsurance,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEstimateStatus((prev) => ({
+          ...prev,
+          [employeeId]: { message: data.error ?? "計算に失敗しました", tone: "error" },
+        }));
+        return;
+      }
+      if (!data.found) {
+        setEstimateStatus((prev) => ({
+          ...prev,
+          [employeeId]: { message: data.message, tone: "info" },
+        }));
+        return;
+      }
+      if (!data.supported) {
+        setEstimateStatus((prev) => ({
+          ...prev,
+          [employeeId]: { message: data.note, tone: "info" },
+        }));
+        return;
+      }
+      updateRow(employeeId, { incomeTax: data.amount });
+      setEstimateStatus((prev) => ({
+        ...prev,
+        [employeeId]: { message: `${data.amount.toLocaleString()}円を入力しました。${data.note}`, tone: "ok" },
+      }));
+    } finally {
+      setEstimating(null);
+    }
   }
 
   return (
@@ -207,6 +263,34 @@ export function DeductionManager({
                         }
                         className="w-28"
                       />
+                      {key === "incomeTax" && (
+                        <div className="mt-1 flex flex-col gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => handleEstimateIncomeTax(emp.id)}
+                            disabled={estimating === emp.id}
+                          >
+                            {estimating === emp.id ? "計算中..." : "自動計算"}
+                          </Button>
+                          {estimateStatus[emp.id] && (
+                            <p
+                              className={
+                                "w-40 text-[11px] leading-snug " +
+                                (estimateStatus[emp.id].tone === "ok"
+                                  ? "text-result-field-border"
+                                  : estimateStatus[emp.id].tone === "error"
+                                    ? "text-destructive"
+                                    : "text-muted-foreground")
+                              }
+                            >
+                              {estimateStatus[emp.id].message}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
                   ))}
                   <TableCell className="bg-result-field font-semibold tabular-nums">
