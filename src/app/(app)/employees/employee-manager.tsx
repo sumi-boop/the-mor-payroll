@@ -81,6 +81,14 @@ const emptyForm: Omit<Employee, "id"> = {
   remarks: "",
 };
 
+type StatusFilter = "active" | "inactive" | "all";
+
+const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
+  active: "在籍",
+  inactive: "退職・休職",
+  all: "すべて",
+};
+
 export function EmployeeManager({ initialEmployees }: { initialEmployees: Employee[] }) {
   const [employees, setEmployees] = useState(initialEmployees);
   const [open, setOpen] = useState(false);
@@ -88,6 +96,19 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
   const [form, setForm] = useState<Omit<Employee, "id">>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+
+  const filterCounts: Record<StatusFilter, number> = {
+    active: employees.filter((e) => e.status === "active").length,
+    inactive: employees.filter((e) => e.status !== "active").length,
+    all: employees.length,
+  };
+
+  const visibleEmployees = employees.filter((e) => {
+    if (statusFilter === "active") return e.status === "active";
+    if (statusFilter === "inactive") return e.status !== "active";
+    return true;
+  });
 
   function openNew() {
     setEditingId(null);
@@ -141,7 +162,24 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-1 rounded-lg border border-border bg-secondary p-1">
+          {(Object.keys(STATUS_FILTER_LABEL) as StatusFilter[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setStatusFilter(key)}
+              className={
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors " +
+                (statusFilter === key
+                  ? "bg-card text-navy shadow-sm"
+                  : "text-muted-foreground hover:text-navy")
+              }
+            >
+              {STATUS_FILTER_LABEL[key]}({filterCounts[key]})
+            </button>
+          ))}
+        </div>
         <Button onClick={openNew}>+ 従業員を追加</Button>
       </div>
       <div className="rounded-lg border border-border bg-card">
@@ -159,7 +197,7 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
             </TableRow>
           </TableHeader>
           <TableBody>
-            {employees.map((emp) => (
+            {visibleEmployees.map((emp) => (
               <TableRow key={emp.id}>
                 <TableCell className="font-medium">{emp.name}</TableCell>
                 <TableCell>{emp.employeeNumber ?? "-"}</TableCell>
@@ -179,10 +217,12 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
                 </TableCell>
               </TableRow>
             ))}
-            {employees.length === 0 && (
+            {visibleEmployees.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                  従業員が登録されていません
+                  {employees.length === 0
+                    ? "従業員が登録されていません"
+                    : `「${STATUS_FILTER_LABEL[statusFilter]}」に該当する従業員はいません`}
                 </TableCell>
               </TableRow>
             )}

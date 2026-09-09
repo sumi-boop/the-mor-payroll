@@ -13,6 +13,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { formatYen, formatMonth } from "@/lib/format";
+import { rememberTargetMonth } from "@/lib/targetMonth";
 
 type Row = {
   employeeId: string;
@@ -35,6 +36,7 @@ export function TransferList({
   const router = useRouter();
 
   function handleMonthChange(month: string) {
+    rememberTargetMonth(month);
     router.push(`/payroll/transfer-list?month=${month}`);
   }
 

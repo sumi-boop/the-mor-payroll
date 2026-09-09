@@ -1,9 +1,5 @@
+import { resolveTargetMonth } from "@/lib/targetMonth.server";
 import { PayrollManager } from "./payroll-manager";
-
-function currentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 export default async function PayrollPage({
   searchParams,
@@ -11,7 +7,7 @@ export default async function PayrollPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const sp = await searchParams;
-  const targetMonth = sp.month ?? currentMonth();
+  const targetMonth = await resolveTargetMonth(sp.month);
 
   return (
     <div className="flex flex-col gap-4">

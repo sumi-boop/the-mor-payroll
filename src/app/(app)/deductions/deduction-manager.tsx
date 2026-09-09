@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { formatYen } from "@/lib/format";
 import { calcTotalDeduction } from "@/lib/payroll/calc";
+import { rememberTargetMonth } from "@/lib/targetMonth";
 
 type Employee = {
   id: string;
@@ -117,6 +118,12 @@ export function DeductionManager({
   const [confirmStatus, setConfirmStatus] = useState<
     Record<string, { message: string; tone: "ok" | "error" }>
   >({});
+  const [savingAll, setSavingAll] = useState(false);
+  const [saveAllMessage, setSaveAllMessage] = useState<string | null>(null);
+  const [estimatingAll, setEstimatingAll] = useState(false);
+  const [estimateAllMessage, setEstimateAllMessage] = useState<string | null>(null);
+
+  const anyRowBusy = savingId !== null || estimating !== null || savingAll || estimatingAll;
 
   function updateRow(employeeId: string, patch: Partial<Row>) {
     setRows((prev) => ({ ...prev, [employeeId]: { ...prev[employeeId], ...patch } }));
@@ -200,10 +207,15 @@ export function DeductionManager({
   }
 
   function handleMonthChange(month: string) {
+    rememberTargetMonth(month);
     router.push(`/deductions?month=${month}`);
   }
 
-  async function handleEstimateIncomeTax(employeeId: string) {
+  // 戻り値の tone は「全員分を自動計算」でまとめて呼び出したときの
+  // 集計(何件入力できて、何件スキップ/失敗したか)に使う。
+  async function handleEstimateIncomeTax(
+    employeeId: string
+  ): Promise<{ tone: "ok" | "info" | "error" }> {
     setEstimating(employeeId);
     setEstimateStatus((prev) => ({ ...prev, [employeeId]: undefined } as never));
     const row = rows[employeeId];
@@ -226,30 +238,93 @@ export function DeductionManager({
           ...prev,
           [employeeId]: { message: data.error ?? "計算に失敗しました", tone: "error" },
         }));
-        return;
+        return { tone: "error" };
       }
       if (!data.found) {
         setEstimateStatus((prev) => ({
           ...prev,
           [employeeId]: { message: data.message, tone: "info" },
         }));
-        return;
+        return { tone: "info" };
       }
       if (!data.supported) {
         setEstimateStatus((prev) => ({
           ...prev,
           [employeeId]: { message: data.note, tone: "info" },
         }));
-        return;
+        return { tone: "info" };
       }
       updateRow(employeeId, { incomeTax: data.amount });
       setEstimateStatus((prev) => ({
         ...prev,
         [employeeId]: { message: `${data.amount.toLocaleString()}円を入力しました。${data.note}`, tone: "ok" },
       }));
+      return { tone: "ok" };
+    } catch {
+      setEstimateStatus((prev) => ({
+        ...prev,
+        [employeeId]: { message: "通信エラーのため計算できませんでした。", tone: "error" },
+      }));
+      return { tone: "error" };
     } finally {
       setEstimating(null);
     }
+  }
+
+  // 表示中の全従業員について、所得税の自動計算を順番に実行する。
+  // 値はその場で入力されるだけで保存はされないため、内容を確認してから
+  // 「全員分を保存」または各行の「保存」で確定すること。
+  async function handleEstimateAll() {
+    setEstimatingAll(true);
+    setEstimateAllMessage(null);
+    let filled = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const emp of employees) {
+      const result = await handleEstimateIncomeTax(emp.id);
+      if (result.tone === "ok") filled++;
+      else if (result.tone === "error") failed++;
+      else skipped++;
+    }
+    setEstimatingAll(false);
+    setEstimateAllMessage(
+      `所得税の自動計算が完了しました: ${filled}件入力` +
+        (skipped ? `、${skipped}件はスキップ(未取込・乙欄など。個別に確認してください)` : "") +
+        (failed ? `、${failed}件は失敗しました` : "")
+    );
+  }
+
+  // 表示中の全従業員の入力内容(金額・確認チェック)を1行ずつまとめて保存する。
+  async function handleSaveAll() {
+    setSavingAll(true);
+    setSaveAllMessage(null);
+    let success = 0;
+    let failed = 0;
+    for (const emp of employees) {
+      const row = rows[emp.id];
+      try {
+        const res = await fetch("/api/deductions", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(row),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          updateRow(emp.id, data.deduction);
+          success++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+    setSavingAll(false);
+    setSaveAllMessage(
+      failed > 0
+        ? `${success}件を保存しました(${failed}件は失敗しました。個別に保存し直してください)`
+        : `${success}件をすべて保存しました`
+    );
   }
 
   return (
@@ -267,7 +342,22 @@ export function DeductionManager({
         <Button variant="outline" onClick={handleCopyPrevious} disabled={copying}>
           {copying ? "コピー中..." : "前月の控除額をコピー"}
         </Button>
+        <Button variant="outline" onClick={handleEstimateAll} disabled={anyRowBusy || employees.length === 0}>
+          {estimatingAll ? "全員分を自動計算中..." : "全員分の所得税を自動計算"}
+        </Button>
+        <Button onClick={handleSaveAll} disabled={anyRowBusy || employees.length === 0}>
+          {savingAll ? "全員分を保存中..." : "全員分を保存"}
+        </Button>
       </div>
+
+      {(saveAllMessage || estimateAllMessage) && (
+        <div className="flex flex-col gap-1">
+          {estimateAllMessage && (
+            <p className="text-sm text-muted-foreground">{estimateAllMessage}</p>
+          )}
+          {saveAllMessage && <p className="text-sm text-muted-foreground">{saveAllMessage}</p>}
+        </div>
+      )}
 
       <div className="rounded-lg border border-border bg-card">
         <Table>
@@ -316,7 +406,7 @@ export function DeductionManager({
                             size="sm"
                             className="h-6 px-2 text-xs"
                             onClick={() => handleEstimateIncomeTax(emp.id)}
-                            disabled={estimating === emp.id}
+                            disabled={estimating === emp.id || estimatingAll || savingAll}
                           >
                             {estimating === emp.id ? "計算中..." : "自動計算"}
                           </Button>
@@ -346,7 +436,7 @@ export function DeductionManager({
                       <label className="flex items-center gap-1">
                         <Checkbox
                           checked={row.residentTaxConfirmed}
-                          disabled={savingId === emp.id}
+                          disabled={savingId === emp.id || savingAll || estimatingAll}
                           onCheckedChange={(v) => handleToggleConfirm(emp.id, "residentTaxConfirmed", !!v)}
                         />
                         住民税
@@ -354,7 +444,7 @@ export function DeductionManager({
                       <label className="flex items-center gap-1">
                         <Checkbox
                           checked={row.socialInsuranceConfirmed}
-                          disabled={savingId === emp.id}
+                          disabled={savingId === emp.id || savingAll || estimatingAll}
                           onCheckedChange={(v) => handleToggleConfirm(emp.id, "socialInsuranceConfirmed", !!v)}
                         />
                         社保
@@ -362,7 +452,7 @@ export function DeductionManager({
                       <label className="flex items-center gap-1">
                         <Checkbox
                           checked={row.incomeTaxConfirmed}
-                          disabled={savingId === emp.id}
+                          disabled={savingId === emp.id || savingAll || estimatingAll}
                           onCheckedChange={(v) => handleToggleConfirm(emp.id, "incomeTaxConfirmed", !!v)}
                         />
                         所得税
@@ -393,7 +483,7 @@ export function DeductionManager({
                     <Button
                       size="sm"
                       onClick={() => handleSave(emp.id)}
-                      disabled={savingId === emp.id}
+                      disabled={savingId === emp.id || savingAll || estimatingAll}
                     >
                       {savingId === emp.id ? "保存中" : "保存"}
                     </Button>

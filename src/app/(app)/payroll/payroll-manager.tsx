@@ -23,6 +23,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { formatYen, formatMonth } from "@/lib/format";
+import { rememberTargetMonth } from "@/lib/targetMonth";
 
 type Warning = { code: string; message: string; severity: "error" | "warning" };
 
@@ -204,6 +205,7 @@ export function PayrollManager({ initialMonth }: { initialMonth: string }) {
             value={targetMonth}
             onChange={(e) => {
               setTargetMonth(e.target.value);
+              rememberTargetMonth(e.target.value);
               router.replace(`/payroll?month=${e.target.value}`);
             }}
             className="w-48"
