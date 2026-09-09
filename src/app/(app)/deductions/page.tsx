@@ -29,6 +29,11 @@ export default async function DeductionsPage({
         </p>
       </div>
       <DeductionManager
+        // targetMonth が変わるたびにコンポーネントを作り直し、
+        // 内部の入力状態(rows)を新しい月のデータで初期化し直す。
+        // key を付けないと、対象年月を切り替えても画面上は前の月の
+        // 入力内容が残ったままになり、手動リロードしないと更新されない。
+        key={targetMonth}
         targetMonth={targetMonth}
         employees={employees}
         deductions={deductions}
