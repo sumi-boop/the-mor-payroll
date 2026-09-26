@@ -61,7 +61,14 @@ export async function DELETE(
     );
   }
 
-  await prisma.payrollRecord.delete({ where: { id } });
+  // 確定→確定解除の履歴がある明細には payroll_snapshots が残っている場合があり、
+  // 外部キー制約があるため PayrollRecord 単体では削除できない。
+  // 監査ログ(recordAuditLog)には削除の事実が別途残るため、スナップショット本体は
+  // レコードと合わせて削除する。
+  await prisma.$transaction([
+    prisma.payrollSnapshot.deleteMany({ where: { payrollRecordId: id } }),
+    prisma.payrollRecord.delete({ where: { id } }),
+  ]);
 
   await recordAuditLog({
     userId: auth.session.userId,
