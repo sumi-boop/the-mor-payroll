@@ -40,3 +40,35 @@ export async function PATCH(
 
   return NextResponse.json({ record });
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  ctx: RouteContext<"/api/payroll/[id]">
+) {
+  const auth = await requireApiSession();
+  if ("error" in auth) return auth.error;
+
+  const { id } = await ctx.params;
+
+  const existing = await prisma.payrollRecord.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "レコードが見つかりません" }, { status: 404 });
+  }
+  if (existing.isConfirmed) {
+    return NextResponse.json(
+      { error: "確定済みの明細です。修正するには確定解除してから削除してください" },
+      { status: 409 }
+    );
+  }
+
+  await prisma.payrollRecord.delete({ where: { id } });
+
+  await recordAuditLog({
+    userId: auth.session.userId,
+    action: "payroll_record_delete",
+    targetType: "PayrollRecord",
+    targetId: id,
+  });
+
+  return NextResponse.json({ ok: true });
+}

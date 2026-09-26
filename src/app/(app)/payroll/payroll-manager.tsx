@@ -70,6 +70,7 @@ export function PayrollManager({ initialMonth }: { initialMonth: string }) {
   const [zipDialogOpen, setZipDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
 
   async function load() {
     setLoading(true);
@@ -149,6 +150,23 @@ export function PayrollManager({ initialMonth }: { initialMonth: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recordId }),
       });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doDelete(recordId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/payroll/${recordId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(data.error ?? "削除に失敗しました");
+        return;
+      }
+      setMessage("削除しました");
+      setDeleteTarget(null);
       await load();
     } finally {
       setBusy(false);
@@ -340,7 +358,18 @@ export function PayrollManager({ initialMonth }: { initialMonth: string }) {
                           </Button>
                         </>
                       ) : (
-                        <span className="text-xs text-muted-foreground">確定後にPDF作成可能</span>
+                        <>
+                          <span className="text-xs text-muted-foreground">確定後にPDF作成可能</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={busy}
+                            onClick={() => setDeleteTarget(item)}
+                          >
+                            削除
+                          </Button>
+                        </>
                       )}
                     </div>
                   </TableCell>
@@ -394,6 +423,30 @@ export function PayrollManager({ initialMonth }: { initialMonth: string }) {
             </Button>
             <Button onClick={downloadZip} disabled={busy}>
               {busy ? "作成中..." : "ダウンロード"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>給与明細の削除確認</DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.record.employee.name}さんの{formatMonth(targetMonth)}分の給与明細を削除します。
+              CSV取込を間違えた場合などに使用してください。この操作は取り消せません。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              キャンセル
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={() => deleteTarget && doDelete(deleteTarget.record.id)}
+            >
+              {busy ? "削除中..." : "削除する"}
             </Button>
           </DialogFooter>
         </DialogContent>
