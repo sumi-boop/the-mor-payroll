@@ -48,6 +48,10 @@ model Employee {
   dependentFormSubmitted Boolean @default(false) // 扶養控除等申告書提出有無
   dependentCount     Int       @default(0) // 扶養親族等の人数
   taxWithholdingType String    @default("kou") // kou(甲欄) | otsu(乙欄)
+  employmentType     String    @default("part_time") // full_time(正社員) | part_time(アルバイト・パート等)
+  standardBaseSalary       Int? // 正社員用: 基本給(固定・変更があった月に更新)
+  standardCommuteAllowance Int? // 正社員用: 通勤手当(固定・変更があった月に更新)
+  standardIncentive        Int? // 正社員用: インセンティブ(固定・変更があった月に更新)
   bankInfo           String? // 振込先情報（銀行名・支店名・口座種別・口座番号・口座名義）
   remarks            String?
   createdAt          DateTime  @default(now())

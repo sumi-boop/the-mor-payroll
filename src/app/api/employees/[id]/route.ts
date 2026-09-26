@@ -84,6 +84,16 @@ export async function PATCH(
       ...(data.taxWithholdingType !== undefined
         ? { taxWithholdingType: data.taxWithholdingType }
         : {}),
+      ...(data.employmentType !== undefined ? { employmentType: data.employmentType } : {}),
+      ...(data.standardBaseSalary !== undefined
+        ? { standardBaseSalary: data.standardBaseSalary }
+        : {}),
+      ...(data.standardCommuteAllowance !== undefined
+        ? { standardCommuteAllowance: data.standardCommuteAllowance }
+        : {}),
+      ...(data.standardIncentive !== undefined
+        ? { standardIncentive: data.standardIncentive }
+        : {}),
       ...(data.bankInfo !== undefined ? { bankInfo: data.bankInfo } : {}),
       ...(data.remarks !== undefined ? { remarks: data.remarks } : {}),
     },

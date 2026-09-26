@@ -5,6 +5,7 @@ import { LogoutButton } from "./logout-button";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/import", label: "CSV取込" },
+  { href: "/salaried", label: "正社員給与入力" },
   { href: "/payroll", label: "給与計算確認" },
   { href: "/payroll/transfer-list", label: "振込先一覧" },
   { href: "/deductions", label: "月別控除設定" },

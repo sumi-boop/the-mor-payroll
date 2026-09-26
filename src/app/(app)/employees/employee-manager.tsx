@@ -49,6 +49,10 @@ type Employee = {
   dependentFormSubmitted: boolean;
   dependentCount: number;
   taxWithholdingType: string;
+  employmentType: string;
+  standardBaseSalary: number | null;
+  standardCommuteAllowance: number | null;
+  standardIncentive: number | null;
   bankInfo: string | null;
   remarks: string | null;
 };
@@ -77,6 +81,10 @@ const emptyForm: Omit<Employee, "id"> = {
   dependentFormSubmitted: false,
   dependentCount: 0,
   taxWithholdingType: "kou",
+  employmentType: "part_time",
+  standardBaseSalary: null,
+  standardCommuteAllowance: null,
+  standardIncentive: null,
   bankInfo: "",
   remarks: "",
 };
@@ -134,6 +142,18 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
           ? null
           : Number(form.standardMonthlyRemuneration),
       dependentCount: Number(form.dependentCount) || 0,
+      standardBaseSalary:
+        form.standardBaseSalary === null || Number.isNaN(form.standardBaseSalary)
+          ? null
+          : Number(form.standardBaseSalary),
+      standardCommuteAllowance:
+        form.standardCommuteAllowance === null || Number.isNaN(form.standardCommuteAllowance)
+          ? null
+          : Number(form.standardCommuteAllowance),
+      standardIncentive:
+        form.standardIncentive === null || Number.isNaN(form.standardIncentive)
+          ? null
+          : Number(form.standardIncentive),
     };
     try {
       const res = await fetch(editingId ? `/api/employees/${editingId}` : "/api/employees", {
@@ -189,6 +209,7 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
               <TableHead>氏名</TableHead>
               <TableHead>従業員番号</TableHead>
               <TableHead>在籍状況</TableHead>
+              <TableHead>雇用形態</TableHead>
               <TableHead>社会保険</TableHead>
               <TableHead>雇用保険</TableHead>
               <TableHead>源泉区分</TableHead>
@@ -206,6 +227,11 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
                     {STATUS_LABEL[emp.status] ?? emp.status}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  <Badge variant={emp.employmentType === "full_time" ? "default" : "outline"}>
+                    {emp.employmentType === "full_time" ? "正社員" : "アルバイト等"}
+                  </Badge>
+                </TableCell>
                 <TableCell>{emp.socialInsurance ? "加入" : "未加入"}</TableCell>
                 <TableCell>{emp.employmentInsurance ? "加入" : "未加入"}</TableCell>
                 <TableCell>{emp.taxWithholdingType === "kou" ? "甲欄" : "乙欄"}</TableCell>
@@ -219,7 +245,7 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
             ))}
             {visibleEmployees.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   {employees.length === 0
                     ? "従業員が登録されていません"
                     : `「${STATUS_FILTER_LABEL[statusFilter]}」に該当する従業員はいません`}
@@ -299,6 +325,18 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
                 </SelectContent>
               </Select>
             </Field>
+            <Field label="雇用形態">
+              <Select
+                value={form.employmentType}
+                onValueChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="part_time">アルバイト等(CSV取込で運用)</SelectItem>
+                  <SelectItem value="full_time">正社員(アプリ内で給与入力)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="源泉徴収区分">
               <Select
                 value={form.taxWithholdingType}
@@ -331,6 +369,49 @@ export function EmployeeManager({ initialEmployees }: { initialEmployees: Employ
                 onChange={(e) => setForm((f) => ({ ...f, dependentCount: Number(e.target.value) || 0 }))}
               />
             </Field>
+            {form.employmentType === "full_time" && (
+              <>
+                <Field label="基本給(固定・正社員用)">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.standardBaseSalary ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        standardBaseSalary: e.target.value === "" ? null : Number(e.target.value),
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="通勤手当(固定・正社員用)">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.standardCommuteAllowance ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        standardCommuteAllowance: e.target.value === "" ? null : Number(e.target.value),
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="インセンティブ(固定・正社員用)">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.standardIncentive ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        standardIncentive: e.target.value === "" ? null : Number(e.target.value),
+                      }))
+                    }
+                  />
+                </Field>
+              </>
+            )}
             <div className="flex flex-col gap-2 sm:col-span-2">
               <CheckField
                 label="社会保険加入"

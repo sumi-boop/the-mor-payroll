@@ -18,6 +18,10 @@ export const EmployeeInputSchema = z.object({
   dependentFormSubmitted: z.boolean().default(false),
   dependentCount: z.number().int().min(0).default(0),
   taxWithholdingType: z.enum(["kou", "otsu"]).default("kou"),
+  employmentType: z.enum(["full_time", "part_time"]).default("part_time"),
+  standardBaseSalary: z.number().int().min(0).nullable().optional(),
+  standardCommuteAllowance: z.number().int().min(0).nullable().optional(),
+  standardIncentive: z.number().int().min(0).nullable().optional(),
   bankInfo: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
 });
